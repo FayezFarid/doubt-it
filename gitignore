@@ -1,0 +1,17 @@
+Assets/Photon/*
+Libary*
+*.meta
+*.anim
+*.png
+*.asset
+*.shader
+*.controller
+*.prefab
+*.jpg
+*.mat
+*.db-shm
+*.db
+*.db-wal
+.vsconfig
+*.csproj
+*.unity
