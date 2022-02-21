@@ -239,6 +239,7 @@ public class VisualHandler : NetworkBehaviour
     }
     void CreateGlowingCards(List<GameHandlerv2.CardFalse> cardFalses)
     {
+
         foreach (GameHandlerv2.CardFalse item in cardFalses)
         {
             item.Carde.GetComponent<OfflineCardManager>().FlipBurgers(true);

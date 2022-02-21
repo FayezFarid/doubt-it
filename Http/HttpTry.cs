@@ -19,7 +19,7 @@ public class HttpTry : MonoBehaviour
         UnityWebRequest request = UnityWebRequest.Get("http://localhost:5000/test");
       
         yield return request.SendWebRequest();
-        if (request.isNetworkError || request.result == UnityWebRequest.Result.ProtocolError)
+        if ( request.result == UnityWebRequest.Result.ProtocolError)
         {
             Debug.Log(request.error);
         }

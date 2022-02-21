@@ -65,11 +65,11 @@ public class DebateComponent
             {
                 ChoicesAreRight = false;
                 Debug.Log("FOUND one ya7chi fih");
-                falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], false));
+                falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i].GetComponent<NetworkObject>(), false));
             }
-            else falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], true));
+            else falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i].GetComponent<NetworkObject>(), true));
         }
-        gameHandler.RPCVerifyChoice(_playerSource,ChoicesAreRight, falseCards.ToArray());
+        gameHandler.RPCVerifyChoice(_playerSource,ChoicesAreRight);
         Debug.Log("choices correct is= " + ChoicesAreRight);
         //other
         // gameHandler.RPCVerifyChoiceForOther();

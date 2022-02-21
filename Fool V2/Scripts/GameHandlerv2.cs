@@ -79,16 +79,26 @@ public class GameHandlerv2 : NetworkBehaviour
     public List<int> CheckList = new List<int>();
     public NetworkObject networkObject;
     [System.Serializable]
-    public struct CardFalse :INetworkStruct
+    public struct CardFalse 
     {
-        public GameObject Carde;
+        public NetworkObject Carde;
         public NetworkBool Correct;
-        public CardFalse(GameObject cc, NetworkBool ccorr)
+        public CardFalse(NetworkObject cc, NetworkBool ccorr)
         {
             Carde = cc;
             Correct = ccorr;
         }
     }
+    //public struct CardFalse :INetworkStruct
+    //{
+    //    public NetworkObject Carde;
+    //    public NetworkBool Correct;
+    //    public CardFalse(NetworkObject cc, NetworkBool ccorr)
+    //    {
+    //        Carde = cc;
+    //        Correct = ccorr;
+    //    }
+    //}
     [HideInInspector] public Stringcontainer stringcontainer;
     #region  Events
     [HideInInspector] public UnityEvent<GameObject, Transform> SetParent;
@@ -242,7 +252,7 @@ public class GameHandlerv2 : NetworkBehaviour
     [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
     public void RPCVerifyChoiceForOther()
     {
-        bool ChoicesAreRight = true;
+        NetworkBool ChoicesAreRight = true;
         List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
         for (int i = CardsOnField.Count - LastPlayedCards; i < CardsOnField.Count; i++)
         {
@@ -251,31 +261,27 @@ public class GameHandlerv2 : NetworkBehaviour
             {
                 ChoicesAreRight = false;
                 Debug.Log("FOUND one ya7chi fih");
-                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], false));
+                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i].GetComponent<NetworkObject>(), false));
             }
-            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], true));
+            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i].GetComponent<NetworkObject>(), true));
         }
         OnOthersDebate?.Invoke(falseCards, ChoicesAreRight);
     }
     [Rpc]
-    public void RPCVerifyChoice([RpcTarget] PlayerRef player, bool ChoicesAreRight,CardFalse[] FalseCards)
+    public void RPCVerifyChoice([RpcTarget] PlayerRef player, NetworkBool ChoicesAreRight)
     {
         Debug.Log("Rpc verify choice Player is =" + player.PlayerId);
-        List<GameHandlerv2.CardFalse> falseCards = new List<CardFalse>();
+        List<CardFalse> falseCards = new List<CardFalse>();
         for (int i = CardsOnField.Count - LastPlayedCards; i < CardsOnField.Count; i++)
         {
             //Debug.Log(i + "   Choosen debate");
             if (CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != SelectedCardNumber)
-            {
-                ChoicesAreRight = false;
-                Debug.Log("FOUND one ya7chi fih");
-                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], false));
-            }
-            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], true));
+                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i].GetComponent<NetworkObject>(), false));
+            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i].GetComponent<NetworkObject>(), true));
         }
         if (ChoicesAreRight) 
-            OnLostDebate?.Invoke(falseCards);
-        else OnWinDebate?.Invoke(falseCards);
+            OnLostDebate?.Invoke(falseCards.ToList());
+        else OnWinDebate?.Invoke(falseCards.ToList());
         foreach (GameObject item in CardsOnField)
             //all
             RPCVerfyingChoice(item.GetComponent<NetworkObject>(), ChoicesAreRight);
