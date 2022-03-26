@@ -2,7 +2,12 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System;
-
+public enum OnlineGameStateNum
+{
+    TurnState,
+    WaitState,
+    DebateState
+}
 public abstract class OnlineGameState
 {
     public OnlinePlayer CurrentPlayerTurn;

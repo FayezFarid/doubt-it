@@ -7,6 +7,7 @@ using UnityEngine.UI;
 using Fusion;
 public class VisualHandler : NetworkBehaviour
 {
+    #region references
     public Transform MidCards;
     public Transform MidArea;
     public Transform canvas;
@@ -21,6 +22,8 @@ public class VisualHandler : NetworkBehaviour
     public GameObject DeadArea;
     public GameObject StartPanel;
     public GameObject ChoicesStep2;
+    public GameObject PlayerStat;
+    public Transform PlayersAreas;
     [Header("Mid/choice")]
     public GameObject choices;
     public TextMeshProUGUI Nbcards;
@@ -36,9 +39,12 @@ public class VisualHandler : NetworkBehaviour
     public Image Consquences;
     public Sprite WonSprite;
     public Sprite LostSprite;
-    //Visual Variables
-    List<GameObject> spawnedHolders = new List<GameObject>();
-
+    [Header("PlayerSlot")]
+    public NetworkPrefabRef playerslot;
+    #endregion
+    #region Data struct for visual
+    public Dictionary<OnlinePlayer, NetworkObject> PlayersStats = new Dictionary<OnlinePlayer, NetworkObject>();
+    #endregion
     // Instance
     private static VisualHandler instance;
     public static VisualHandler Instance
@@ -62,15 +68,13 @@ public class VisualHandler : NetworkBehaviour
     }
     public override void Spawned()
     {
-        StartPanel.transform.GetChild(0).GetComponent<Button>().interactable = gameHandler.networkObject.HasStateAuthority;
-        //StartPanel.transform.GetChild(0).GetComponent<Button>().onClick.AddListener(delegate { gameHandler.StartGame(); });
+        StartPanel.transform.GetChild(0).GetComponent<Button>().enabled = gameHandler.networkObject.HasStateAuthority;
     }
     void OnEnable()
     {
         gameHandler.Deselected.AddListener(Deselection);
         gameHandler.Selected.AddListener(Selected);
         gameHandler.PopSmoke.AddListener(PoppingSmoke);
-        gameHandler.FlipBurgers.AddListener(BurgerFLiper);
         gameHandler.PreGameStart.AddListener(PreStart);
         gameHandler.SetParent.AddListener(SetPARENT);
         gameHandler.OnChoiceConfirm.AddListener(ChoicesConfirm);
@@ -80,31 +84,7 @@ public class VisualHandler : NetworkBehaviour
         gameHandler.OnOthersDebate.AddListener(OnAnotherPlayerBussines);
         gameHandler.OnShowOthersStart.AddListener(OnShowOther);
         OnlineTurnState.OnURTurn += YourTurn;
-    }
-    void OnShowOther()
-    {
-        List<OnlinePlayer> TempoList = gameHandler.onlinePlayers;
-        List<Transform> TempoListTransform = gameHandler.Areas;
-        int MyPlayerIndex = TempoList.IndexOf(gameHandler.GetMyPlayer());
-         MyPlayerIndex = Extension.IncInt(MyPlayerIndex, TempoList.Count);
-        int AreaIndex = 1;
-        for (int i = 0; i < TempoList.Count-1; i++)
-        {
-            if (!TempoList[MyPlayerIndex].isLocalPlayer)
-            {
-                Debug.Log("Area Index =" + AreaIndex);
-                TempoList[MyPlayerIndex].SetPlayerCardsTo(TempoListTransform[AreaIndex]);
-                TempoList[MyPlayerIndex].Area = TempoListTransform[AreaIndex];
-                MyPlayerIndex = Extension.IncInt(MyPlayerIndex, TempoList.Count);
-                AreaIndex = Extension.IncInt(AreaIndex, TempoListTransform.Count);
-                
-                if (AreaIndex == 0)
-                    AreaIndex++;
-            }
-            else
-                TempoList[MyPlayerIndex].Area = TempoListTransform[0];
-
-        }
+        gameHandler.OnPlayerCreated += SpawnPlayerVisual;
     }
     private void OnDisable()
     {
@@ -114,8 +94,33 @@ public class VisualHandler : NetworkBehaviour
         }
         OnlineTurnState.OnURTurn -= YourTurn;
     }
-    void OnAnotherPlayerBussines(List<GameHandlerv2.CardFalse> falseCards,bool choicesisRight)
+    #region EventHooks 
+    void SpawnPlayerVisual(OnlinePlayer _player)
     {
+        try { 
+        NetworkObject obj=Runner.Spawn(playerslot, new Vector2(0, 0), Quaternion.identity);
+        PlayersStats.Add(_player, obj);
+        obj.GetBehaviour<PlayerStats>().SetupStat(_player);
+        _player._playerstats = obj.GetBehaviour<PlayerStats>();
+        }
+        catch
+        {
+            Debug.LogError("error");
+        }
+    }
+    void RemoveCard(NetworkObject obj) => obj.transform.SetParent(DontMindHim.transform);
+
+    void OnShowOther()
+    {
+        //foreach (OnlinePlayer item in gameHandler.onlinePlayers)
+        //{
+        //    if (!item.isLocalPlayer)
+        //        item.transform.SetParent(PlayersAreas);
+        //}
+    }
+    void OnAnotherPlayerBussines(bool choicesisRight)
+    {
+        List<GameHandlerv2.CardFalse> falseCards = GenerateFalseCards();
         //string SelectedString = _player.Name + " Has";
         //if (choicesisRight)
         //    SelectedString += "Lost Debate";
@@ -126,20 +131,118 @@ public class VisualHandler : NetworkBehaviour
         DeadArea.transform.GetChild(2).gameObject.SetActive(true);
         DeadArea.transform.SetAsLastSibling();
         if (choicesisRight)
-        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = gameHandler.onlinePlayers[gameHandler.TurnInt].Name+"Has Lost Debate";
+            DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = gameHandler.onlinePlayers[gameHandler.TurnInt].Name + "Has Lost Debate";
         else DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = gameHandler.onlinePlayers[gameHandler.TurnInt].Name + "Has Won Debate";
         StartCoroutine(closeDeadDelayed(falseCards));
         StartCoroutine(ReturnToNormal());
     }
+    void YourTurn()
+    {
+        YourTurnGO.transform.SetAsLastSibling();
+        YourTurnGO.SetActive(true);
+        StartCoroutine(closeYourTurn());
+    }
+    private void PoppingSmoke()
+    {
+        string SelectedString;
+
+        TextHolder _txt = stringcontainer.LangPack[gameHandler.lang];
+        string plname;
+        if (gameHandler.onlinePlayers[gameHandler.TurnInt].Name != "" && gameHandler.onlinePlayers[gameHandler.TurnInt].Name != null)
+            plname = gameHandler.onlinePlayers[gameHandler.TurnInt].Name;
+        else plname = "Player " + gameHandler.onlinePlayers[gameHandler.TurnInt].number.ToString();
+        if (gameHandler.CardsOnField.Count == 0)
+            SelectedString = "It's <color=red>" + plname + "</color> turn";
+        else
+        {
+            SelectedString = _txt.ContainedString[3];
+            SelectedString = SelectedString.Replace("{0}", plname);
+            SelectedString = SelectedString.Replace("{1}", gameHandler.CardsOnField.Count.ToString());
+            SelectedString = SelectedString.Replace("{2}", Extension.translateInt(gameHandler.SelectedCardNumber));
+        }
+        SmokeScreen.transform.SetAsLastSibling();
+        SmokeScreen.GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
+    }
+    void LostDebate()
+    {
+        List<GameHandlerv2.CardFalse> cardFalses = GenerateFalseCards();
+        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[0].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
+        DeadArea.transform.GetChild(2).gameObject.SetActive(true);
+        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
+        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.red;
+        Consquences.sprite = LostSprite;
+        CreateGlowingCards(cardFalses);
+        StartCoroutine(closeDeadDelayed(cardFalses));
+    }
+    void WonDebate()
+    {
+        List<GameHandlerv2.CardFalse> cardFalses = GenerateFalseCards();
+        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[1].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
+        DeadArea.transform.GetChild(2).gameObject.SetActive(true);
+        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
+        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.green;
+        Consquences.sprite = WonSprite;
+        CreateGlowingCards(cardFalses);
+        StartCoroutine(closeDeadDelayed(cardFalses));
+    }
+    void Selected(GameObject carde)
+    {
+        if (!Mid.activeInHierarchy)
+            Mid.SetActive(true);
+        carde.transform.SetParent(MidArea.transform, false);
+    }
+    void PreStart()
+    {
+        //  Name.SetActive(true);
+        Destroy(StartPanel);
+
+        foreach (OnlinePlayer item in gameHandler.onlinePlayers)
+        {
+            item.OnCardRemoved += RemoveCard;
+            item.OnCardDestroy += OnDestroyCard;
+        }
+        //P1area.transform.localPosition = new Vector2(0, P1area.transform.localPosition.y + 10);
+        // Mid.transform.localPosition = new Vector2(0, Mid.transform.localPosition.y + 50);
+        // Mid.transform.GetChild(3).localPosition = new Vector2(0, -200);
+        // DeadArea.transform.localPosition = new Vector2(0, DeadArea.transform.localPosition.y);
+
+    }
+    void TurnChanged()
+    {
+
+    }
+    void SetPARENT(GameObject card, Transform area)
+    {
+
+        if (area == null)
+            Debug.LogError("area null!!!!!!!");
+
+        card.transform.SetParent(area, false);
+    }
+    void ChoicesConfirm()
+    {
+        Debug.Log("Choice confirmed");
+        string SelectedString = "<color=red>" + Extension.translateInt(gameHandler.SelectedCardNumber) + "</color>";
+        DeadArea.transform.SetAsLastSibling();
+        DeadArea.transform.GetChild(1).GetComponent<TextMeshProUGUI>().text = gameHandler.LastPlayedCards + " cards of type " + SelectedString;
+        if (gameHandler.PrevSelectedButton != null)
+        {
+            gameHandler.PrevSelectedButton.GetComponent<ButtonSystem>().DisActive();
+            gameHandler.PrevSelectedButton = null;
+        }
+
+    }
+    #endregion
+    #region Extra methods
     IEnumerator closeDeadDelayed(List<GameHandlerv2.CardFalse> cardFalses)
     {
-        yield return new WaitForSeconds(4);
+        yield return new WaitForSeconds(gameHandler.WaitTime);
         try
         {
             foreach (GameHandlerv2.CardFalse item in cardFalses)
                 item.Carde.transform.GetChild(0).GetComponent<Image>().enabled = false;
         }
-       
+
         finally
         {
             DeadArea.transform.GetChild(2).gameObject.SetActive(false);
@@ -153,96 +256,42 @@ public class VisualHandler : NetworkBehaviour
     {
         foreach (OnlinePlayer item in gameHandler.onlinePlayers)
         {
-            foreach (GameObject itemm in item.PlayerCards)
-                itemm.transform.SetParent(item.Area);
+            if (item.Area != null)
+                foreach (GameObject itemm in item.PlayerCards)
+                    itemm.transform.SetParent(item.Area);
 
         }
 
     }
     IEnumerator ReturnToNormal()
     {
-      
+
         yield return new WaitForSeconds(4.1f);
         gameHandler.gameState.ManageState();
-    }
-    void YourTurn()
-    {
-        YourTurnGO.transform.SetAsLastSibling();
-        YourTurnGO.SetActive(true);
-        StartCoroutine(closeYourTurn());
     }
     IEnumerator closeYourTurn()
     {
         yield return new WaitForSeconds(2);
         YourTurnGO.GetComponent<Animator>().SetTrigger("Exit");
     }
-    void TurnChanged()
+    List<GameHandlerv2.CardFalse> GenerateFalseCards()
     {
-      
-        //if (gameHandler.Flipped)
-        //    foreach (OnlinePlayer pplayer in Players)
-        //    {
-        //        if (!pplayer.isPlayerTurn)
-        //            pplayer.flipMyCards(false);
-        //        else pplayer.flipMyCards(true);
-        //        //  FlipBurgers?.Invoke(pplayer);
-        //    }
-    }
-    void TurnCardsDeClockWise(List<GameObject> PlayerCards, Transform area)
-    {
-        foreach (GameObject card in PlayerCards)
-            card.transform.SetParent(area);
-    }
-    void Selected(GameObject carde)
-    {
-        if (!Mid.activeInHierarchy)
-            Mid.SetActive(true);
-        carde.transform.SetParent(MidArea.transform, false);
-    }
-    void PreStart()
-    {
-        //  Name.SetActive(true);
-        Destroy(StartPanel);
-        
-        foreach (OnlinePlayer item in gameHandler.onlinePlayers)
+        List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
+        for (int i = gameHandler.CardsOnField.Count - gameHandler.LastPlayedCards; i < gameHandler.CardsOnField.Count; i++)
         {
-            item.OnCardDestroy += OnDestroyCard;
+            //Debug.Log(i + "   Choosen debate");
+            if (gameHandler.CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != gameHandler.SelectedCardNumber)
+                falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], false));
+            else falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], true));
         }
-        if (!gameHandler.ShowOtherPlayers)
-        {
-           P1area.transform.localPosition = new Vector2(0, P1area.transform.localPosition.y + 10);
-            Mid.transform.localPosition = new Vector2(0, Mid.transform.localPosition.y + 50);
-            Mid.transform.GetChild(3).localPosition = new Vector2(0, -200);
-            DeadArea.transform.localPosition = new Vector2(0, DeadArea.transform.localPosition.y);
-        }
-    }
-    void LostDebate(List<GameHandlerv2.CardFalse> cardFalses)
-    {
-        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[0].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
-        DeadArea.transform.GetChild(2).gameObject.SetActive(true);
-        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
-        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.red;
-        Consquences.sprite = LostSprite;
-        CreateGlowingCards(cardFalses);
-        StartCoroutine(closeDeadDelayed(cardFalses));
-    }
-    void WonDebate(List<GameHandlerv2.CardFalse> cardFalses)
-    {
-
-        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[1].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
-        DeadArea.transform.GetChild(2).gameObject.SetActive(true);
-        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
-        DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.green;
-        Consquences.sprite = WonSprite;
-        CreateGlowingCards(cardFalses);
-        StartCoroutine(closeDeadDelayed(cardFalses));
+        if (falseCards.Count == 0) Debug.LogError("Empty False cards!!!!");
+        return falseCards;
     }
     void CreateGlowingCards(List<GameHandlerv2.CardFalse> cardFalses)
     {
 
         foreach (GameHandlerv2.CardFalse item in cardFalses)
         {
-            item.Carde.GetComponent<OfflineCardManager>().FlipBurgers(true);
             item.Carde.transform.GetChild(0).GetComponent<Image>().enabled = true;
             if (item.Correct)
                 item.Carde.transform.GetChild(0).GetComponent<Image>().color = Color.green;
@@ -250,40 +299,19 @@ public class VisualHandler : NetworkBehaviour
             item.Carde.transform.SetParent(DeadAreaContent, false);
         }
     }
-    void Deselection(GameObject carde)=>  carde.transform.SetParent(P1area.transform, false);
-    void ChoicesConfirm()
-    {
-        Debug.Log("Choice confirmed");
-        string SelectedString = "<color=red>"+ Extension.translateInt(gameHandler.SelectedCardNumber)+"</color>";
-        DeadArea.transform.SetAsLastSibling();
-        DeadArea.transform.GetChild(1).GetComponent<TextMeshProUGUI>().text = gameHandler.LastPlayedCards + " cards of type " + SelectedString;
-        if (gameHandler.PrevSelectedButton != null)
-        {
-            gameHandler.PrevSelectedButton.GetComponent<ButtonSystem>().DisActive();
-            gameHandler.PrevSelectedButton = null;      
-        }
+    void Deselection(GameObject carde) => carde.transform.SetParent(P1area.transform, false);
 
-    }
-   
     void OnReturnVisual(List<GameObject> lalist)
     {
         foreach (GameObject item in lalist)
         {
-          
+
             item.transform.SetParent(P1area.transform, false);
             item.GetComponent<OfflineCardManager>().selectable = true;
 
         }
-            
-        
-    }
-     void SetPARENT(GameObject card, Transform area)
-    {
-      
-        if (area == null)
-            Debug.LogError("area null!!!!!!!");
-       
-        card.transform.SetParent(area, false);
+
+
     }
 
     private void OnDestroyCard(int EqNumber)
@@ -301,27 +329,7 @@ public class VisualHandler : NetworkBehaviour
         yield return new WaitForSeconds(2);
         Anoucmenet.transform.SetAsFirstSibling();
     }
-    private void PoppingSmoke()
-    {
-        string SelectedString;
-       
-        TextHolder _txt = stringcontainer.LangPack[gameHandler.lang];
-        string plname;
-        if (gameHandler.onlinePlayers[gameHandler.TurnInt].Name != "" && gameHandler.onlinePlayers[gameHandler.TurnInt].Name != null)
-            plname = gameHandler.onlinePlayers[gameHandler.TurnInt].Name;
-        else plname = "Player "+gameHandler.onlinePlayers[gameHandler.TurnInt].number.ToString();
-        if (gameHandler.CardsOnField.Count == 0)
-            SelectedString = "It's <color=red>" + plname + "</color> turn"; 
-        else 
-        {
-            SelectedString = _txt.ContainedString[3];
-            SelectedString = SelectedString.Replace("{0}", plname);
-            SelectedString = SelectedString.Replace("{1}", gameHandler.CardsOnField.Count.ToString());
-            SelectedString = SelectedString.Replace("{2}", Extension.translateInt(gameHandler.SelectedCardNumber));
-        }
-        SmokeScreen.transform.SetAsLastSibling();
-        SmokeScreen.GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
-    }
+
     public void Showstats()
     {
         facts.transform.SetAsLastSibling();
@@ -336,10 +344,6 @@ public class VisualHandler : NetworkBehaviour
 
         TextTobeinsert += "There is " + a + " On the Field \n" + (52 - a).ToString() + "has been discarded";
         facts.GetComponentInChildren<TextMeshProUGUI>().text = TextTobeinsert;
-    }
-    void BurgerFLiper(OnlinePlayer Lejouer, bool flipto)
-    {
-        Lejouer.flipMyCards(flipto);
     }
     public void ReturnFacts() => facts.transform.SetAsFirstSibling();
 
@@ -368,12 +372,12 @@ public class VisualHandler : NetworkBehaviour
 
 
     }
-   
     public void RemoveSmokeScreen()
     {
         SmokeScreen.transform.SetAsFirstSibling();
-   
+
     }
+    #endregion
     #region ASsigned to buttons
     public void Continue()
     {
@@ -389,24 +393,24 @@ public class VisualHandler : NetworkBehaviour
             return;
         }
         choices.SetActive(true);
-       RemoveDestroyedButtons();
+        RemoveDestroyedButtons();
         Nbcards.text = "You have selected  " + MidCards.childCount.ToString() + " Cards";
     }
     public void Confirm()
     {
-        if (gameHandler.SelectedCardNumber == -1)
+        if (gameHandler.PrevSelectedButton == null && !gameHandler.isCardsOnField)
             return;
         gameHandler.ConfirmChoice();
         choices.SetActive(false);
         Mid.SetActive(false);
-      //  Debug.Log("Confirm to activate is active " + Mid.active);
+        //  Debug.Log("Confirm to activate is active " + Mid.active);
 
     }
     public void ReturnFirst()
     {
         List<GameObject> tempo = new List<GameObject>();
         foreach (GameObject item in gameHandler.TempoSelectedCards)
-            tempo.Add(item) ;
+            tempo.Add(item);
         gameHandler.ResetSelected();
         OnReturnVisual(tempo);
         Mid.SetActive(false);

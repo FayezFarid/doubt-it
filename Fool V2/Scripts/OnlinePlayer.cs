@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System;
 using Fusion;
+using System.Linq;
 
 [System.Serializable]
 public class OnlinePlayer : NetworkBehaviour
@@ -10,7 +11,6 @@ public class OnlinePlayer : NetworkBehaviour
     [Header("Local Player")]
     public NetworkBool isLocalPlayer;
     public List<GameObject> PlayerCards = new List<GameObject>();
-    public List<GameObject> ToBeRemovedCards = new List<GameObject>();
     [Networked] public NetworkBool Won{ get; set; }
     [Networked] public NetworkBool isPlayerTurn { get; set; }
     [Networked] public int number{ get; set;}
@@ -18,44 +18,62 @@ public class OnlinePlayer : NetworkBehaviour
     [Networked(OnChanged =nameof(OnPlayerChange))] public PlayerRef _player { get; set; }
     public Transform Area;
     public Action<int>  OnCardDestroy;
+    public Action<NetworkObject> OnCardRemoved;
+    public Action<int> OnCardChange;
+    public PlayerStats _playerstats;
     public static void OnPlayerChange(Changed<OnlinePlayer> Change)
     {
         Change.Behaviour.isLocalPlayer = Change.Behaviour._player == Change.Behaviour.Runner.LocalPlayer;
     }
+    public void Awake()
+    { 
+    }
+    private void OnDisable()
+    {
+        //_playerstats.UNHook(this);
+    }
     public void SetupPlayer(PlayerRef player)
     {
-       
-        Runner = FindObjectOfType<NetworkRunner>();
+        //_playerstats.HookOnlinePlayerActions(this);
+        
+         Runner = FindObjectOfType<NetworkRunner>();
         _player = player;
-       // isLocalPlayer = _player == Runner.LocalPlayer;
         number = _player.PlayerId;
-        //if (_player.NickName == string.Empty || _player.NickName == null)
-            Name = "Player " + _player.PlayerId + 1;
-        //else Name = _player.NickName;
+         Name = "Player " + _player.PlayerId + 1;
+        //_playerstats.playername = Name;
+        //_playerstats.SetPlayerName();
+        //_playerstats.SetPlayerNumber();
     }
-    public bool ReadyToRemoveCards() => ToBeRemovedCards.Count == 0;
-    public void CleanUpCards()
-    {
-        foreach (GameObject item in ToBeRemovedCards)
-            PlayerCards.Remove(item);
-
-    }
-    public void AddCards(GameObject card)=>  PlayerCards.Add(card);
+    public void AddCards(GameObject card) { PlayerCards.Add(card);  UpdatePlayerStats();}
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPCRemoveCard(NetworkObject card) { PlayerCards.Remove(card.gameObject); }
     public void RemoveCard(GameObject card)
     {
         RPCRemoveCard(card.GetComponent<NetworkObject>());
+        UpdatePlayerStats();
+    }
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    void UpdatePlayerStats() 
+    {
+        if(_playerstats)
+            _playerstats.playerCards = PlayerCards.Count; 
     }
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    private void RPCRemoveCard(NetworkObject card) => PlayerCards.Remove(card.gameObject);
+    public void RPCCleanUpCards(NetworkObject[] cardsToDelete)
+    {
+        foreach (NetworkObject item in cardsToDelete)
+        {
+            OnCardRemoved?.Invoke(item);
+            PlayerCards.Remove(item.gameObject);
+        }
+        UpdatePlayerStats();
+        SortCards();
+
+    }
     public void Clear(NetworkBool CheckWith4)
     {
-
-        RpcClearDuplicates(CheckWith4);
-    }
-
-    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    public void RpcClearDuplicates(NetworkBool CheckWith4)
-    {
+        SortCards();
+        #region First Checks and Init
         int NbDup;
         if (CheckWith4)
             NbDup = 4;
@@ -64,7 +82,8 @@ public class OnlinePlayer : NetworkBehaviour
             return;
         int i = 0;
         int j;
-        List<GameObject> ToBeDeleted = new List<GameObject>();
+        List<NetworkObject> ToBeDeleted = new List<NetworkObject>();
+        #endregion
         while (PlayerCards.Count - i >= NbDup)
         {
             bool Same = true;
@@ -89,7 +108,7 @@ public class OnlinePlayer : NetworkBehaviour
             {
                 for (int Hk = i; Hk < i + NbDup; Hk++)
                 {
-                    ToBeDeleted.Add(PlayerCards[Hk]);
+                    ToBeDeleted.Add(PlayerCards[Hk].GetComponent<NetworkObject>());
                 }
                 OnCardDestroy?.Invoke(i);
                 i += NbDup;
@@ -97,14 +116,9 @@ public class OnlinePlayer : NetworkBehaviour
             else i++;
             j++;
         }
-        //foreach (var item in ToBeDeleted)
-        //{
-        //    Debug.Log("Card is " + item.GetComponent<OfflineCardManager>().EqNumber);
-        //}
-        ToBeRemovedCards = ToBeDeleted;
-        CleanUpCards();
-     
+        RPCCleanUpCards(ToBeDeleted.ToArray());
     }
+  
     public void Enablecards(NetworkBool decision)
     {
         foreach (GameObject carde in PlayerCards)
@@ -116,10 +130,10 @@ public class OnlinePlayer : NetworkBehaviour
             return true;
         else return false;
     }
-    public void flipMyCards(NetworkBool flipto)
+    public void SortCards()
     {
-        foreach (GameObject card in PlayerCards)
-            card.GetComponent<OfflineCardManager>().FlipBurgers(flipto);
+        IEnumerable<GameObject> query = PlayerCards.OrderBy(Card => Card.GetComponent<OfflineCardManager>().EqNumber);
+        PlayerCards = query.ToList();
     }
     public void SetPlayerCardsTo(Transform area)
     {
@@ -129,10 +143,5 @@ public class OnlinePlayer : NetworkBehaviour
     }
     public void checkFornull() { } //=> PlayerCards.RemoveAll(item => item == null);
 }
-public enum OnlineGameStateNum
-{
-    TurnState,
-    WaitState,
-    DebateState
-}
+
 

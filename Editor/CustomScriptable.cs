@@ -41,7 +41,22 @@ public class CustomGameHandlerV2 : Editor
     {
         try {
         base.OnInspectorGUI();
+
         GameHandlerv2 _this = (GameHandlerv2)target;
+            EditorGUILayout.LabelField("StartArray test");
+            EditorGUILayout.LabelField($"Count {_this._Array.Length}");
+            foreach (var item in _this._Array)
+            {
+                
+               EditorGUILayout.LabelField(item.ToString());
+            }
+            EditorGUILayout.LabelField("End Array");
+            EditorGUILayout.LabelField("StartArray");
+            foreach (var item in _this.all._Array)
+            {  if(item !=null)
+                EditorGUILayout.LabelField(item.ToString());
+            }
+            EditorGUILayout.LabelField("End Array");
         EditorGUILayout.LabelField(_this.CheckWith4.ToString());
         EditorGUILayout.LabelField("Game State");
         if (_this.gameState != null)
