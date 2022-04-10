@@ -151,13 +151,13 @@ public class VisualHandler : NetworkBehaviour
         if (gameHandler.onlinePlayers[gameHandler.TurnInt].Name != "" && gameHandler.onlinePlayers[gameHandler.TurnInt].Name != null)
             plname = gameHandler.onlinePlayers[gameHandler.TurnInt].Name;
         else plname = "Player " + gameHandler.onlinePlayers[gameHandler.TurnInt].number.ToString();
-        if (gameHandler.CardsOnField.Count == 0)
+        if (gameHandler.ArrayRealCount(gameHandler.CardsOnField) == 0)
             SelectedString = "It's <color=red>" + plname + "</color> turn";
         else
         {
             SelectedString = _txt.ContainedString[3];
             SelectedString = SelectedString.Replace("{0}", plname);
-            SelectedString = SelectedString.Replace("{1}", gameHandler.CardsOnField.Count.ToString());
+            SelectedString = SelectedString.Replace("{1}", gameHandler.ArrayRealCount(gameHandler.CardsOnField).ToString());
             SelectedString = SelectedString.Replace("{2}", Extension.translateInt(gameHandler.SelectedCardNumber));
         }
         SmokeScreen.transform.SetAsLastSibling();
@@ -166,7 +166,7 @@ public class VisualHandler : NetworkBehaviour
     void LostDebate()
     {
         List<GameHandlerv2.CardFalse> cardFalses = GenerateFalseCards();
-        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[0].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
+        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[0].Replace("{0}", gameHandler.ArrayRealCount(gameHandler.CardsOnField).ToString());
         DeadArea.transform.GetChild(2).gameObject.SetActive(true);
         DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
         DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.red;
@@ -177,7 +177,7 @@ public class VisualHandler : NetworkBehaviour
     void WonDebate()
     {
         List<GameHandlerv2.CardFalse> cardFalses = GenerateFalseCards();
-        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[1].Replace("{0}", gameHandler.CardsOnField.Count.ToString());
+        string SelectedString = stringcontainer.LangPack[gameHandler.lang].ContainedString[1].Replace("{0}", gameHandler.ArrayRealCount(gameHandler.CardsOnField).ToString());
         DeadArea.transform.GetChild(2).gameObject.SetActive(true);
         DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().text = SelectedString;
         DeadArea.transform.GetChild(2).GetComponentInChildren<TextMeshProUGUI>().color = Color.green;
@@ -254,13 +254,13 @@ public class VisualHandler : NetworkBehaviour
     }
     public void ResetCardToPostion()
     {
-        foreach (OnlinePlayer item in gameHandler.onlinePlayers)
-        {
-            if (item.Area != null)
-                foreach (GameObject itemm in item.PlayerCards)
-                    itemm.transform.SetParent(item.Area);
+        //foreach (OnlinePlayer item in gameHandler.onlinePlayers)
+        //{
+        //    if (item.Area != null)
+        //        foreach (GameObject itemm in item.PlayerCards)
+        //            itemm.transform.SetParent(item.Area);
 
-        }
+        //}
 
     }
     IEnumerator ReturnToNormal()
@@ -276,20 +276,22 @@ public class VisualHandler : NetworkBehaviour
     }
     List<GameHandlerv2.CardFalse> GenerateFalseCards()
     {
-        List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
-        for (int i = gameHandler.CardsOnField.Count - gameHandler.LastPlayedCards; i < gameHandler.CardsOnField.Count; i++)
-        {
-            //Debug.Log(i + "   Choosen debate");
-            if (gameHandler.CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != gameHandler.SelectedCardNumber)
-                falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], false));
-            else falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], true));
-        }
-        if (falseCards.Count == 0) Debug.LogError("Empty False cards!!!!");
-        return falseCards;
+        //List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
+        //for (int i = gameHandler.CardsOnField.Count - gameHandler.LastPlayedCards; i < gameHandler.CardsOnField.Count; i++)
+        //{
+        //    //Debug.Log(i + "   Choosen debate");
+        //    if (gameHandler.CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != gameHandler.SelectedCardNumber)
+        //        falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], false));
+        //    else falseCards.Add(new GameHandlerv2.CardFalse(gameHandler.CardsOnField[i], true));
+        //}
+        //if (falseCards.Count == 0) Debug.LogError("Empty False cards!!!!");
+        //return falseCards;
+        return null;
     }
     void CreateGlowingCards(List<GameHandlerv2.CardFalse> cardFalses)
     {
-
+        if (cardFalses == null)
+            return;
         foreach (GameHandlerv2.CardFalse item in cardFalses)
         {
             item.Carde.transform.GetChild(0).GetComponent<Image>().enabled = true;
@@ -350,25 +352,25 @@ public class VisualHandler : NetworkBehaviour
     public void RemoveDestroyedButtons()
     {
 
-        bool exist;
-        for (int i = 0; i < gameHandler.EachPlayerNB; i++)
-        {
-            exist = false;
-            foreach (GameObject item in gameHandler.allcards)
-            {
-                if (item != null)
-                {
-                    if (item.GetComponent<OfflineCardManager>().EqNumber == i)
-                    {
-                        exist = true;
-                        break;
-                    }
+        //bool exist;
+        //for (int i = 0; i < gameHandler.EachPlayerNB; i++)
+        //{
+        //    exist = false;
+        //    foreach (GameObject item in gameHandler.allcards)
+        //    {
+        //        if (item != null)
+        //        {
+        //            if (item.GetComponent<OfflineCardManager>().EqNumber == i)
+        //            {
+        //                exist = true;
+        //                break;
+        //            }
 
-                }
-            }
-            if (!exist)
-                gameHandler.allButton[i].SetActive(false);
-        }
+        //        }
+        //    }
+        //    if (!exist)
+        //        gameHandler.allButton[i].SetActive(false);
+        //}
 
 
     }

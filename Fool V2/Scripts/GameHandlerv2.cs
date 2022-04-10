@@ -25,13 +25,12 @@ public class GameHandlerv2 : NetworkBehaviour
     public GameObject StartPanelPreFab;
     #endregion
     #region Lists
-   
-    public ModNetworkArray all = new ModNetworkArray();
+    [Networked(OnChanged =(nameof(OnNetArrayChange))),Capacity(100)]
+    public NetworkArray<NetworkCard> AllNetCards { get; }
+    public List<CardStructure> allcards = new List<CardStructure>();
+    public List<CardStructure> allcardsInGame = new List<CardStructure>();
     [Networked, Capacity(100)]
-    public NetworkArray<ModNetworkObject> _Array => default;
-    public List<GameObject> allcards = new List<GameObject>();
-    public List<GameObject> allcardsInGame = new List<GameObject>();
-    public List<GameObject> CardsOnField = new List<GameObject>();
+    public NetworkArray<NetworkCard> CardsOnField { get; }
     [HideInInspector] public List<GameObject> allButton = new List<GameObject>();
     public List<GameObject> TempoSelectedCards = new List<GameObject>();
     [HideInInspector] public List<Transform> Areas = new List<Transform>();
@@ -51,6 +50,8 @@ public class GameHandlerv2 : NetworkBehaviour
     [HideInInspector] [Networked] public int DebateOngoingTurns { get; set; }
     [HideInInspector] [Networked] public int TurnInt { get; set; }
     public GameObject PrevSelectedButton;
+    [HideInInspector][Networked] public int ArraySum { get; set; }
+
     #endregion
     private static GameHandlerv2 instance;
     public static GameHandlerv2 Instance
@@ -78,13 +79,13 @@ public class GameHandlerv2 : NetworkBehaviour
     public CardsContainer cardContainer;
     public List<int> CheckList = new List<int>();
     public NetworkObject networkObject;
-    public NetworkArray<float> sync => default;
+    public bool IsOwner { get { return Object.HasStateAuthority; } }
     [System.Serializable]
     public struct CardFalse
     {
-        public GameObject Carde;
+        public CardStructure Carde;
         public NetworkBool Correct;
-        public CardFalse(GameObject cc, NetworkBool ccorr)
+        public CardFalse(CardStructure cc, NetworkBool ccorr)
         {
             Carde = cc;
             Correct = ccorr;
@@ -119,20 +120,18 @@ public class GameHandlerv2 : NetworkBehaviour
     [HideInInspector] public UnityEvent OnShowOthersStart;
     [HideInInspector] public Action<OnlinePlayer> OnPlayerCreated;
     #endregion
-
-    public void IncTurnInt() => TurnInt = Extension.IncInt(TurnInt, onlinePlayers);
-    private void Update()
+    public static void  OnNetArrayChange(Changed<GameHandlerv2> changed)
     {
-        if (CurrentTickStamp >= TickInterval)
-        {
-
-            RemoveNulls();
-            checkCardsAreInPlace();
-            CurrentTickStamp = 0;
-
-        }
-        else CurrentTickStamp += Time.deltaTime;
+        changed.Behaviour.CalcuteEquality();
     }
+    void CalcuteEquality()
+    {
+    
+        if (CalcuteArraySum() != ArraySum)
+            Debug.LogError($"Array ERROR {ArraySum}= {CalcuteArraySum()}");
+       
+    }
+    public void IncTurnInt() => TurnInt = Extension.IncInt(TurnInt, onlinePlayers);
     private void Start()
     {
         SetParent.AddListener(SetPARENT);
@@ -147,8 +146,27 @@ public class GameHandlerv2 : NetworkBehaviour
         CheckWith4 = true;
         networkObject = GetComponent<NetworkObject>();
         Runner = FindObjectOfType<NetworkRunner>();
-       // all.Set(1, networkObject);
+        if (IsOwner)
+        {
+            ClearArrayAllCards();
+            ClearArrayCardOnField();
+
+        }
+        ArraySum = CalcuteArraySum();
+            
+       
+       
         #endregion
+    }
+   
+    int CalcuteArraySum()
+    {
+        int sum = 0;
+        foreach (var item in AllNetCards)
+        {
+            sum += item.ObjID;
+        }
+        return sum;
     }
     public void StartGame()
     {
@@ -162,31 +180,31 @@ public class GameHandlerv2 : NetworkBehaviour
         foreach (OnlinePlayer item in onlinePlayers)
             item.SortCards();
     }
-    void checkCardsAreInPlace()
-    {
-        int Checker;
-        for (int i = 0; i < CheckList.Count; i++)
-        {
-            Checker = 0;
-            for (int j = 0; j < allcards.Count(); j++)
-            {
+    //void checkCardsAreInPlace()
+    //{
+    //    int Checker;
+    //    for (int i = 0; i < CheckList.Count; i++)
+    //    {
+    //        Checker = 0;
+    //        for (int j = 0; j < allcards.Count(); j++)
+    //        {
 
-                if (int.Parse(allcards[j].name) == CheckList[i])
-                {
-                    Checker++;
-                }
-                if (Checker == 4)
-                {
+    //            if (int.Parse(allcards[j].name) == CheckList[i])
+    //            {
+    //                Checker++;
+    //            }
+    //            if (Checker == 4)
+    //            {
 
-                    break;
+    //                break;
 
-                }
-            }
-            if (Checker <= 3)
-                Debug.LogError("Missing card Number= " + allcards[i]);
+    //            }
+    //        }
+    //        if (Checker <= 3)
+    //            Debug.LogError("Missing card Number= " + allcards[i]);
 
-        }
-    }
+    //    }
+    //}
     void RemoveNulls()
     {
         try
@@ -252,10 +270,14 @@ public class GameHandlerv2 : NetworkBehaviour
             swap(ref allcards, Random.Range(0, allcards.Count), Random.Range(0, allcards.Count));
         }
         int PlayerIndex = 0;
-        foreach (GameObject item in allcards)
-        { //RPC target All
-            RPCAddCard(item.GetComponent<NetworkObject>(), PlayerIndex);
+        int netindex = 0;
+        foreach (CardStructure item in allcards)
+        {
+            //RPC target All
+            //onlinePlayers[PlayerIndex].AddCardServer(AllNetCards[netindex]);
+            RPCAddCard(item._Netobj, PlayerIndex);
             PlayerIndex = Extension.IncInt(PlayerIndex, onlinePlayers.Count);
+            netindex++;
         }
         ///End of important
         //RpcTarget All
@@ -263,9 +285,9 @@ public class GameHandlerv2 : NetworkBehaviour
         DestroyDuplicatesAll();
         Debug.Log("All cards Count" + allcards.Count);
     }
-    void swap(ref List<GameObject> allcard, int index1, int index2)
+    void swap(ref List<CardStructure> allcard, int index1, int index2)
     {
-        GameObject _tmp = allcard[index1];
+        CardStructure _tmp = allcard[index1];
         allcard[index1] = allcard[index2];
         allcard[index2] = _tmp;
     }
@@ -280,6 +302,7 @@ public class GameHandlerv2 : NetworkBehaviour
         else VirtualPlayersNumber = onlinePlayers.Count + onlinePlayers.Count % 2;
         Debug.Log("Virtual players number =" + VirtualPlayersNumber);
         string CardType;
+        int NetIndex = 0;
         for (int i = 0; i < EachPlayerNB; i++)
         {
             CardType = GameHandlerv2.AllowedChar[Random.Range(0, 3)];
@@ -288,12 +311,13 @@ public class GameHandlerv2 : NetworkBehaviour
             for (int f = 0; f < VirtualPlayersNumber; f++)
             {
                 NetworkObject cardee = Runner.Spawn(EmptyCard, new Vector2(0, 0), Quaternion.identity);
-                //cardee.GetComponent<Image>().sprite = CurrentList[i];
-                cardee.GetComponent<OfflineCardManager>().CurrentSprite = cardee.GetComponent<Image>().sprite;
-                cardee.GetComponent<OfflineCardManager>().EqNumber = i;
-
-                //allcards.Add(cardee.gameObject);
-                RPCSetCard(cardee, i, CardType);
+                NetworkCard netCard = new NetworkCard(i, NetIndex);
+                
+               // CardStructure cardstruc = new CardStructure(cardee, cardee.GetComponent<OfflineCardManager>(),i, NetIndex);
+                AllNetCards.Set(NetIndex, netCard);
+                ArraySum += NetIndex;
+                RPCSetCard(cardee, i, CardType,NetIndex);
+                NetIndex++;
             }
         }
         Debug.Log(allcards.Count);
@@ -308,30 +332,42 @@ public class GameHandlerv2 : NetworkBehaviour
         List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
         Debug.Log("_player Source =" + SearchForPlayer(_playerSource).isLocalPlayer);
         Debug.Log("SelectedCardNumber; is = " + SelectedCardNumber);
-
-        for (int i = CardsOnField.Count - LastPlayedCards; i < CardsOnField.Count; i++)
+        int cardOnField = ArrayRealCount(CardsOnField);
+        for (int i = cardOnField - LastPlayedCards; i < cardOnField; i++)
         {
             //Debug.Log(i + "   Choosen debate");
-            if (CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != SelectedCardNumber)
+            if (CardsOnField[i].EqNumber != SelectedCardNumber)
             {
                 ChoicesAreRight = false;
                 Debug.Log("FOUND one ya7chi fih");
-                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], false));
+                falseCards.Add(new GameHandlerv2.CardFalse(GetCardByID(CardsOnField[i].ObjID), false));
             }
-            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], true));
+            else falseCards.Add(new GameHandlerv2.CardFalse(GetCardByID(CardsOnField[i].ObjID), true));
         }
-        foreach (GameObject item in CardsOnField)
-            //all
-            RPCVerfyingChoice(item.GetComponent<NetworkObject>(), ChoicesAreRight);
+        int WhomLost = TurnInt;
+
         if (ChoicesAreRight)
+        {
             IncTurnInt();
-        //add networkobject array for false cards
+            Extension.DecInt(WhomLost, onlinePlayers.Count);
+        }
+        else
+            WhomLost = TurnInt;
         RPCVerifyChoice(_playerSource, ChoicesAreRight);
+        AddCardsFromFieldToPlayer(onlinePlayers[WhomLost]);
         Debug.Log("choices correct is= " + ChoicesAreRight);
-        CloseDead(ChoicesAreRight, _playerSource);
-        //other
-        // RPCVerifyChoiceForOther();
-        //RPCloseDead(ChoicesAreRight);
+        EndDebate(ChoicesAreRight, _playerSource);
+    }
+    void AddCardsFromFieldToPlayer(OnlinePlayer _player)
+    {
+        int i = 0;
+        foreach (var item in CardsOnField)
+        {
+            _player.AddCards(GetCardByID(item.ObjID));
+            CardsOnField.Set(i, new NetworkCard(-1, -1));
+            i++;
+        }
+
     }
     #endregion
     #region Flows
@@ -364,11 +400,15 @@ public class GameHandlerv2 : NetworkBehaviour
     public void RPCLeaderConfirmChoice(int selectedcard, NetworkObject[] toAdd, int lastPlayedcard)
     {
         Debug.Log("Rpc Confirm choice");
+        int NetIndex = 0;
         foreach (NetworkObject Card in toAdd)
         {
-            if (Card != null)
-                //all
-                RPCAddToCardOnField(Card.GetComponent<NetworkObject>());
+            CardStructure struc = GetCardByObject(Card);
+            CardsOnField.Set(NetIndex, new NetworkCard(struc.EqNumber,struc.Netid));
+            onlinePlayers[TurnInt].RemoveCardServer(GetCardByObject(Card).Netid);
+            //all
+            RPCAddToCardOnField(Card.GetComponent<NetworkObject>());
+            NetIndex++;
         }
         IncTurnInt();
         SelectedCardNumber = selectedcard;
@@ -384,16 +424,17 @@ public class GameHandlerv2 : NetworkBehaviour
     {
         NetworkBool ChoicesAreRight = true;
         List<GameHandlerv2.CardFalse> falseCards = new List<GameHandlerv2.CardFalse>();
-        for (int i = CardsOnField.Count - LastPlayedCards; i < CardsOnField.Count; i++)
+        int cardOnField = ArrayRealCount(CardsOnField);
+        for (int i = cardOnField- LastPlayedCards; i < cardOnField; i++)
         {
             Debug.Log(i + "   Choosen debate");
-            if (CardsOnField[i].GetComponent<OfflineCardManager>().EqNumber != SelectedCardNumber)
+            if (CardsOnField[i].EqNumber != SelectedCardNumber)
             {
                 ChoicesAreRight = false;
                 Debug.Log("FOUND one ya7chi fih");
-                falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], false));
+                falseCards.Add(new GameHandlerv2.CardFalse(GetCardByID(CardsOnField[i].ObjID), false));
             }
-            else falseCards.Add(new GameHandlerv2.CardFalse(CardsOnField[i], true));
+            else falseCards.Add(new GameHandlerv2.CardFalse(GetCardByID(CardsOnField[i].ObjID), true));
         }
         OnOthersDebate?.Invoke(ChoicesAreRight);
     }
@@ -440,15 +481,15 @@ public class GameHandlerv2 : NetworkBehaviour
     }
     #endregion
     #region State=>>ALL
-    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    //[Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     public void RPCRestAfterDebate()
     {
         isCardsOnField = false;
         SelectedCardNumber = -1;
         LastPlayedCards = 0;
         DebateOngoingTurns = 0;
-        CardsOnField.Clear();
-        SortPlayerCards();
+        ClearArrayCardOnField();
+        //SortPlayerCards();
         CheckPlayerWon();
     }
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
@@ -466,30 +507,30 @@ public class GameHandlerv2 : NetworkBehaviour
         }
     }
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    public void RPCVerfyingChoice(NetworkObject Obj, NetworkBool ChoicesAreRight)
+    public void RPCVerfyingChoice( NetworkBool ChoicesAreRight)
     {
-        if (ChoicesAreRight)
-        {
-            onlinePlayers[TurnInt].AddCards(Obj.gameObject);
-            Obj.gameObject.GetComponent<OfflineCardManager>().ChangeSelectable(false);
-        }
-        else
-        {
-            Obj.gameObject.GetComponent<OfflineCardManager>().selectable = false;
-            onlinePlayers[Extension.DecInt(TurnInt, onlinePlayers.Count)].AddCards(Obj.gameObject);
-        }
+        //if (ChoicesAreRight)
+        //{
+        //    onlinePlayers[TurnInt].AddCards(Obj.gameObject);
+        //    Obj.gameObject.GetComponent<OfflineCardManager>().ChangeSelectable(false);
+        //}
+        //else
+        //{
+        //    Obj.gameObject.GetComponent<OfflineCardManager>().selectable = false;
+        //    onlinePlayers[Extension.DecInt(TurnInt, onlinePlayers.Count)].AddCards(Obj.gameObject);
+        //}
     }
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     public void RPCAddToCardOnField(NetworkObject Card)
     {
 
-        onlinePlayers[TurnInt].RemoveCard(Card.gameObject);
+        onlinePlayers[TurnInt].RemoveCard(GetCardByObject(Card));
         SetParent?.Invoke(Card.gameObject, DontMindHim.transform);
         card.GetComponent<OfflineCardManager>().selectable = false;
-        CardsOnField.Add(Card.gameObject);
+       // CardsOnField.Add(GetCardByObject(Card));
     }
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    public void RPCSetCard(NetworkObject Carde, int CardNumber, string CardType)
+    public void RPCSetCard(NetworkObject Carde, int CardNumber, string CardType,int netindex)
     {
 
         Carde.GetComponent<Image>().sprite = cardContainer.SpriteContainer[CardType][CardNumber];
@@ -497,10 +538,11 @@ public class GameHandlerv2 : NetworkBehaviour
         //Carde.GetComponent<OfflineCardManager>().EqNumber = CardNumber;
         Carde.gameObject.name = CardNumber.ToString();
         Carde.name = CardNumber.ToString();
-        allcards.Add(Carde.gameObject);
+        allcards.Add(new CardStructure(Carde, Carde.GetComponent<OfflineCardManager>(),CardNumber,netindex));
     }
-    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    public void RPCAddCard(NetworkObject Carde, int Playerindex) => onlinePlayers[Playerindex].AddCards(Carde.gameObject);
+    // maybe leave it this way looks beautful
+    //[Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    public void RPCAddCard(NetworkObject Carde, int Playerindex) => onlinePlayers[Playerindex].AddCards(GetCardByObject(Carde));
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     public void RPCCleanUpPlayers()
     {
@@ -520,7 +562,7 @@ public class GameHandlerv2 : NetworkBehaviour
         PreGameStart?.Invoke();
         SortPlayerCards();
         OnlinePlayer _myplayer = GetMyPlayer();
-        foreach (GameObject item in _myplayer.PlayerCards)
+        foreach (CardStructure item in _myplayer.PlayerCards)
         {
             item.transform.SetParent(Areas[0], false);
         }
@@ -566,7 +608,7 @@ public class GameHandlerv2 : NetworkBehaviour
     #endregion
 
     #region Other Method in Server
-    public IEnumerator closeDead(bool choicesIsRight, PlayerRef player)
+    public IEnumerator EndDebateCourtine(bool choicesIsRight, PlayerRef player)
     {
         RPCRestAfterDebate();
         DestroyDuplicatesAll();
@@ -617,12 +659,50 @@ public class GameHandlerv2 : NetworkBehaviour
     }
     [Rpc(RpcSources.All, RpcTargets.All)]
     public void RPCRemovePlayer(NetworkObject _player) => onlinePlayers.Remove(_player.GetComponent<OnlinePlayer>());
-    public void CloseDead(NetworkBool ChoicesAreRight, PlayerRef _player) => StartCoroutine(closeDead(ChoicesAreRight, _player));
+    public void EndDebate(NetworkBool ChoicesAreRight, PlayerRef _player) => StartCoroutine(EndDebateCourtine(ChoicesAreRight, _player));
     public void DestroyDuplicatesAll() => RPCServerDestroyCards();
     public void SetPARENT(GameObject card, Transform area) => card.transform.SetParent(area, false);
     public OnlinePlayer SearchForPlayer(int ActorNumber) => onlinePlayers.Where(player => player.number == ActorNumber).First();
     public OnlinePlayer SearchForPlayer(PlayerRef _player) => onlinePlayers.Where(player => player._player == _player).First();
     public OnlinePlayer GetMyPlayer() => onlinePlayers.Where(player => player._player == Runner.LocalPlayer).First();
+    public CardStructure GetCardByObject(NetworkObject _obj) => allcards.Where(card => card._Netobj == _obj).First();
+    public CardStructure GetCardByID(int ID) 
+    { 
+        //try
+        //{
+            return allcards.Where(card => card.Netid == ID).First();
+        //}
+        //catch(Exception e)
+        //{
+        //    Debug.Log(e.Message);
+        //        return null;
+        //}
+        
+    }
+    void ClearArrayAllCards()
+    {
+        for (int i = 0; i < AllNetCards.Length; i++)
+        {
+            AllNetCards.Set(i, new NetworkCard(-1, -1));
+        }
+    }
+    void ClearArrayCardOnField()
+    {
+        for (int i = 0; i < CardsOnField.Length; i++)
+        {
+            CardsOnField.Set(i, new NetworkCard(-1, -1));
+        }
+    }
+    public  int ArrayRealCount(NetworkArray<NetworkCard> _Array)
+    {
+        int count=0;
+        foreach (var item in _Array)
+        {
+            if (item.ObjID != -1)
+                count++;
+        }
+        return count;
+    }
     public bool IsCurrentPlayerTurn(OnlinePlayer player) => onlinePlayers[TurnInt] == player;
    
     #region Logic Called From UI
@@ -633,7 +713,7 @@ public class GameHandlerv2 : NetworkBehaviour
         allcardsInGame.Clear();
         TurnInt = 0;
         LastPlayedCards = -1;
-        CardsOnField.Clear();
+        ClearArrayCardOnField();
         GameObject f = Instantiate(StartPanelPreFab);
         //    f.transform.SetParent(canvas.transform, false);
         f.SetActive(true);
